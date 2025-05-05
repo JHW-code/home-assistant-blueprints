@@ -1,0 +1,127 @@
+blueprint:
+  name: Hallway Motion Lighting with Night Light & Block Time
+  description: >
+    Turns on hallway lights when motion is detected and illuminance is low. 
+    Allows different brightness for night time, blocks automation during specified hours.
+  domain: automation
+  input:
+    motion_sensors:
+      name: Motion Sensors
+      description: One or more motion sensors
+      selector:
+        entity:
+          multiple: true
+          domain: binary_sensor
+    light_target:
+      name: Light
+      description: The light to control
+      selector:
+        target:
+          entity:
+            domain: light
+    illuminance_sensor:
+      name: Illuminance Sensor
+      description: Illuminance sensor to evaluate light levels
+      selector:
+        entity:
+          domain: sensor
+          device_class: illuminance
+    illuminance_threshold:
+      name: Illuminance Threshold
+      description: Trigger only if below this lux level
+      default: 5
+      selector:
+        number:
+          min: 0
+          max: 100
+          unit_of_measurement: lx
+    night_brightness:
+      name: Night Light Brightness (%)
+      description: Brightness level between night start and end times
+      default: 20
+      selector:
+        number:
+          min: 1
+          max: 100
+          unit_of_measurement: "%"
+    day_brightness:
+      name: Daytime Brightness (%)
+      description: Brightness level for normal hours
+      default: 85
+      selector:
+        number:
+          min: 1
+          max: 100
+          unit_of_measurement: "%"
+    night_time_start:
+      name: Night Time Start
+      description: Start of night light time (e.g. 00:00)
+      default: "00:00:00"
+      selector:
+        time: {}
+    night_time_end:
+      name: Night Time End
+      description: End of night light time (e.g. 10:00)
+      default: "10:00:00"
+      selector:
+        time: {}
+    block_time_start:
+      name: Block Time Start
+      description: Motion will be ignored starting at this time
+      default: "10:00:00"
+      selector:
+        time: {}
+    block_time_end:
+      name: Block Time End
+      description: Motion will be re-enabled after this time
+      default: "16:00:00"
+      selector:
+        time: {}
+
+mode: restart
+
+trigger:
+  - platform: state
+    entity_id: !input motion_sensors
+    to: "on"
+
+condition:
+  - condition: numeric_state
+    entity_id: !input illuminance_sensor
+    below: !input illuminance_threshold
+  - condition: not
+    conditions:
+      - condition: time
+        after: !input block_time_start
+        before: !input block_time_end
+
+action:
+  - choose:
+      - conditions:
+          - condition: time
+            after: !input night_time_start
+            before: !input night_time_end
+        sequence:
+          - service: light.turn_on
+            target: !input light_target
+            data:
+              brightness_pct: !input night_brightness
+              transition: 2
+    default:
+      - service: light.turn_on
+        target: !input light_target
+        data:
+          brightness_pct: !input day_brightness
+          transition: 2
+
+  - wait_for_trigger:
+      - platform: state
+        entity_id: !input motion_sensors
+        to: "off"
+        for:
+          seconds: 30
+
+  - service: light.turn_off
+    target: !input light_target
+    data:
+      transition: 2
